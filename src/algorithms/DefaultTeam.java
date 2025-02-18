@@ -3,91 +3,133 @@ package algorithms;
 import java.awt.Point;
 import java.util.*;
 
+/**
+ * @author  CODEBECQ Florian
+ * @date    17/02/2025
+ * @version 1.0
+ *
+ * Sorbonne Université / M2-STL-ALT
+ *
+ * Description :
+ *      Projet réalisé dans le cadre du Devoir TME8: Feedback Vertex Set
+ *      Implémentation d'une heuristique pour résoudre le problème du FVS dans un graphe géométrique.
+ *
+ * /!\ Ce code a été amélioré avec l'aide d'une IA pour
+ *      - l'écriture des commentaires
+ *      - le renommage des fonctions et variables
+ *      - l'optimisation du temps d'execution
+ *
+ **/
 public class DefaultTeam {
 
     public Evaluation evaluation = new Evaluation();
 
+    /**
+     * Calcule un ensemble de sommets formant un Feedback Vertex Set (FVS)
+     *
+     * @param points        Liste des points (sommets du graphe)
+     * @param edgeThreshold Seuil de distance pour considérer une arête
+     * @return Liste des points formant un FVS
+     */
     public ArrayList<Point> calculFVS(ArrayList<Point> points, int edgeThreshold) {
-        ArrayList<Point> fvs = new ArrayList<>(points);
-        HashSet<Point> aRetirer = new HashSet<>();
-        PriorityQueue<Point> queue = new PriorityQueue<>();
-        int temp_delete_size = -1;
+        // Initialisation du FVS avec tous les points
+        ArrayList<Point> fvsSet = new ArrayList<>(points);
+        HashSet<Point> pointsToRemove = new HashSet<>();
 
-        ArrayList<Point> fvsTemp = new ArrayList<>();
-        int iteration = 0;
-        int max_iteration = 1;
+        // Calcul des voisins pour chaque point (optimisation)
+        Map<Point, List<Point>> neighborsMap = calculateNeighborsMap(points, edgeThreshold);
 
-        while (iteration < max_iteration) {
-            iteration++;
+        // File de priorité pour les points ayant au moins 2 voisins
+        PriorityQueue<Point> priorityQueue = new PriorityQueue<>(
+                Comparator.comparingInt(pt -> neighborsMap.get(pt).size())
+        );
 
-            queue = new PriorityQueue<>(Comparator.comparingInt(p -> evaluation.neighbor(p, fvs, edgeThreshold).size()));
-            fvsTemp = new ArrayList<>(fvs);
-            fvsTemp.removeAll(aRetirer);
-
-            for (Point p : points) {
-                if (evaluation.neighbor(p, points, edgeThreshold).size() < 2) {
-                    aRetirer.add(p);
-                } else {
-                    queue.add(p);
-                }
+        // Initialisation de la file de priorité
+        for (Point point : points) {
+            if (neighborsMap.get(point).size() < 2) {
+                pointsToRemove.add(point);
+            } else {
+                priorityQueue.add(point);
             }
-
-            while (!queue.isEmpty()) {
-                Point minPoint = queue.poll();
-
-                if (aRetirer.contains(minPoint)) {
-                    continue;
-                }
-
-                fvs.remove(minPoint);
-                if (!evaluation.isValid(points, fvs, edgeThreshold)) {
-                    fvs.add(minPoint);
-                } else {
-                    aRetirer.add(minPoint);
-                }
-            }
-
         }
 
+        // Suppression des points en priorisant ceux ayant le moins de voisins
+        while (!priorityQueue.isEmpty()) {
+            Point minPoint = priorityQueue.poll();
 
+            if (pointsToRemove.contains(minPoint)) {
+                continue;
+            }
 
-//        while (aRetirer.size() > temp_delete_size) {
-//            temp_delete_size = aRetirer.size();
-//            aRetirer = new HashSet<>(upgrade(points, fvs, edgeThreshold, new ArrayList<>(aRetirer)));
-//        }
+            fvsSet.remove(minPoint);
+            if (!evaluation.isValid(points, fvsSet, edgeThreshold)) {
+                fvsSet.add(minPoint);
+            } else {
+                pointsToRemove.add(minPoint);
+            }
+        }
 
-        fvs.removeAll(aRetirer);
-        return fvs;
+        // Amélioration itérative du FVS
+        ArrayList<Point> tempFVS = new ArrayList<>(fvsSet);
+        do {
+            fvsSet = tempFVS;
+            tempFVS = improveFVS(points, fvsSet, edgeThreshold, neighborsMap);
+        } while (tempFVS.size() < fvsSet.size());
+
+        return tempFVS;
     }
 
-//    private ArrayList<Point> upgrade(ArrayList<Point> points, ArrayList<Point> fvs, int edgeThreshold, ArrayList<Point> removeList) {
-//        ArrayList<Point> upgr_fvs = new ArrayList<Point>(fvs);
-//
-//        for (int p = 0; p < fvs.size(); p++) {
-//            for (int q = p + 1; q < fvs.size(); q++) {
-//                Point p1 = fvs.get(p);
-//                Point p2 = fvs.get(q);
-//
-//                upgr_fvs.remove(p1);
-//                upgr_fvs.remove(p2);
-//
-//                //int vl = upgr_fvs.size();
-//
-//                for (Point x : points) {
-//                    if (!upgr_fvs.contains(x)) {
-//                        upgr_fvs.add(x);
-//                        if (evaluation.isValid(points, new ArrayList<>(upgr_fvs), edgeThreshold)) {
-//                            //removeList.add(x);
-//                            return removeList;
-//                        }
-//                        upgr_fvs.remove(x);
-//                    }
-//                }
-//
-//                upgr_fvs.add(p1);
-//                upgr_fvs.add(p2);
-//            }
-//        }
-//        return removeList;
-//    }
+    /**
+     * Calcule une carte des voisins pour chaque point
+     *
+     * @param points        Liste des points (sommets du graphe)
+     * @param edgeThreshold Seuil de distance pour considérer une arête
+     * @return Carte des voisins pour chaque point
+     */
+    private Map<Point, List<Point>> calculateNeighborsMap(ArrayList<Point> points, int edgeThreshold) {
+        Map<Point, List<Point>> neighborsMap = new HashMap<>();
+        for (Point point : points) {
+            neighborsMap.put(point, evaluation.neighbor(point, points, edgeThreshold));
+        }
+        return neighborsMap;
+    }
+
+    /**
+     * Tente d'améliorer le FVS en remplaçant des paires de sommets par un autre sommet
+     *
+     * @param points        Liste des points (sommets du graphe)
+     * @param fvsSet        Liste des points formant un FVS
+     * @param edgeThreshold Seuil de distance pour considérer une arête
+     * @param neighborsMap  Carte des voisins pour chaque point
+     * @return Nouvelle liste de points après amélioration
+     */
+    private ArrayList<Point> improveFVS(ArrayList<Point> points, ArrayList<Point> fvsSet, int edgeThreshold, Map<Point, List<Point>> neighborsMap) {
+        ArrayList<Point> improvedFVS = new ArrayList<>(fvsSet);
+
+        // Parcourt de toutes les paires de sommets du FVS
+        for (int i = 0; i < fvsSet.size(); i++) {
+            for (int j = i + 1; j < fvsSet.size(); j++) {
+                Point vertex1 = fvsSet.get(i);
+                Point vertex2 = fvsSet.get(j);
+
+                improvedFVS.remove(vertex1);
+                improvedFVS.remove(vertex2);
+
+                // Essai d'ajout d'un autre sommet pour optimiser
+                for (Point candidate : points) {
+                    if (!improvedFVS.contains(candidate)) {
+                        improvedFVS.add(candidate);
+                        if (evaluation.isValid(points, new ArrayList<>(improvedFVS), edgeThreshold)) {
+                            return improvedFVS;
+                        }
+                        improvedFVS.remove(candidate);
+                    }
+                }
+
+                improvedFVS.add(vertex1);
+                improvedFVS.add(vertex2);
+            }
+        }
+        return improvedFVS;
+    }
 }
